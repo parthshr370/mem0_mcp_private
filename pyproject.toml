@@ -25,7 +25,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -75,9 +74,9 @@ packages = ["src/mem0_mcp_server"]
 "src/mem0_mcp_server/config.json" = "share/mcp/configs/mem0-mcp-server.json"
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 strict = true

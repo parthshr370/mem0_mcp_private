@@ -1,60 +1,72 @@
 # Local Testing Cookbook
 
-This guide mirrors everything we walked through manually: build/run the Mem0 MCP
-server three ways (stdio CLI, Smithery HTTP, Docker HTTP) and point the bundled
-Pydantic AI agent at each mode. All commands assume you’re at the repo root
-(`$REPO_ROOT`, e.g., `~/Downloads/mem0_mcp_private`) and have already run
-`pip install -e ".[smithery]"` within your Python environment.
+Use this after cloning the repo to validate every delivery path (stdio CLI,
+Smithery HTTP, Docker HTTP) without publishing to PyPI. You will:
 
-## 0. Common Setup
+1. Install the package in editable mode so code changes take effect immediately.
+2. Export your Mem0/OpenAI keys once.
+3. Run the bundled Pydantic AI REPL against each transport by swapping MCP
+   config files.
+
+## Prerequisites
+
+- Python 3.10+, `pip`, and preferably `uv`
+- Docker (for the container scenario)
+- A Mem0 API key (`MEM0_API_KEY`)
+- Optional: Smithery CLI support (`pip install "mem0-mcp-server[smithery]"`)
+
+## 1. Clone & Install
 
 ```bash
-cd $REPO_ROOT
+git clone https://github.com/mem0-ai/mem0-mcp-server.git
+cd mem0-mcp-server
+pip install -e ".[smithery]"
+```
+
+## 2. Export Environment Variables (once per shell)
+
+```bash
 export MEM0_API_KEY="sk_mem0_..."
 export MEM0_DEFAULT_USER_ID="your-handle"   # optional
-export OPENAI_API_KEY="sk-openai_..."      # needed for the Pydantic REPL
+export OPENAI_API_KEY="sk-openai_..."      # required only for the REPL
 ```
 
-When using the REPL, leave `MEM0_MCP_CONFIG_PATH` unset unless a scenario below
-explicitly tells you to set it.
+Unless noted, leave `MEM0_MCP_CONFIG_PATH` unset so the REPL defaults to
+`example/config.json`.
 
-## 1. Local StdIO / Package CLI
+`$REPO_ROOT` refers to this directory.
 
-### Run the MCP server
+---
+
+## Scenario A – Local StdIO / CLI
+
+Run the stdio transport just like PyPI users would.
 
 ```bash
-uvx mem0-mcp-server     # or python -m mem0_mcp_server.server
+uvx mem0-mcp-server    # or python -m mem0_mcp_server.server
 ```
 
-This starts FastMCP over stdio on your terminal. Point Claude/Cursor at the
-`uvx mem0-mcp-server` command or keep it open for manual tests.
-
-### Test with the Pydantic REPL
+Test via the REPL (launches `example/config.json`, which runs the server in
+process):
 
 ```bash
 python example/pydantic_ai_repl.py
 ```
 
-Because `MEM0_MCP_CONFIG_PATH` is unset, the REPL loads `example/config.json`,
-which launches `python -m mem0_mcp_server.server` in-process. Prompts like
-“Remember that I love tiramisu” should succeed, and you’ll see tool logs in the
-same terminal.
+Prompts like “Remember that I love tiramisu” should succeed; watch the stdio
+terminal for tool logs.
 
-## 2. Smithery HTTP (local CLI)
+---
 
-### Start the HTTP server
+## Scenario B – Smithery HTTP (local CLI)
+
+Use the Smithery CLI to expose `http://127.0.0.1:8081/mcp`.
 
 ```bash
-uv run smithery dev        # hosts http://127.0.0.1:8081/mcp
+uv run smithery dev          # optional: uv run smithery playground
 ```
 
-Optional: `uv run smithery playground` opens an ngrok tunnel + web playground.
-
-### Point the Pydantic REPL at Smithery
-
-Create (or reuse) a config file that references the HTTP endpoint; easiest is
-to copy `example/config.json`, replace `command/args` with an HTTP entry, and
-save it somewhere (e.g., `/tmp/smithery-config.json`):
+Create an HTTP config (e.g., `/tmp/smithery-config.json`):
 
 ```json
 {
@@ -67,7 +79,7 @@ save it somewhere (e.g., `/tmp/smithery-config.json`):
 }
 ```
 
-Then run:
+Run the REPL against it:
 
 ```bash
 export MEM0_MCP_CONFIG_PATH=/tmp/smithery-config.json
@@ -75,22 +87,20 @@ export MEM0_MCP_CONFIG_SERVER=mem0-smithery
 python example/pydantic_ai_repl.py
 ```
 
-The REPL now talks to the Smithery HTTP server instead of spawning stdio.
+The agent now talks to the HTTP endpoint instead of spawning stdio.
 
-## 3. Docker HTTP
+---
 
-### Build & run the container
+## Scenario C – Docker HTTP
+
+Build the container and expose port 8081.
 
 ```bash
 docker build -t mem0-mcp-server .
 docker run --rm -e MEM0_API_KEY="sk_mem0_..." -p 8081:8081 mem0-mcp-server
 ```
 
-Leave the container running; it serves `http://localhost:8081/mcp`.
-
-### Point the Pydantic REPL at Docker
-
-Use the bundled HTTP config:
+Leave this terminal running. In a second terminal:
 
 ```bash
 export MEM0_MCP_CONFIG_PATH="$PWD/example/docker-config.json"
@@ -98,17 +108,18 @@ export MEM0_MCP_CONFIG_SERVER=mem0-docker
 python example/pydantic_ai_repl.py
 ```
 
-You should see tool logs inside the Docker container’s terminal whenever the
-agent calls Mem0.
+You should see tool logs in the Docker terminal whenever the agent calls Mem0.
 
-## Switching Configs Quickly
+---
 
-| Scenario        | Config file                     | Environment tweaks                               |
-|-----------------|---------------------------------|--------------------------------------------------|
-| Local stdio     | `example/config.json` (default) | Leave `MEM0_MCP_CONFIG_PATH` unset               |
-| Smithery HTTP   | Custom HTTP JSON (see above)    | Set `MEM0_MCP_CONFIG_PATH` + `MEM0_MCP_CONFIG_SERVER` |
-| Docker HTTP     | `example/docker-config.json`    | Same as Smithery but point to provided file      |
+## Config Cheat Sheet
 
-Remember the container/server still needs `MEM0_API_KEY` in *its* environment.
-Passing `-e MEM0_API_KEY=...` to `docker run` or configuring Smithery’s hosted
-env block is mandatory.
+| Use case      | Config file / snippet                                                          | Notes                                            |
+| ------------- | ------------------------------------------------------------------------------ | ------------------------------------------------ |
+| StdIO (local) | `example/config.json`                                                          | Default; no env tweaks needed.                   |
+| Smithery HTTP | Copy `example/config.json`, set `type="http"`, `url=http://127.0.0.1:8081/mcp` | Remember to set `MEM0_MCP_CONFIG_PATH`/`SERVER`. |
+| Docker HTTP   | `example/docker-config.json`                                                   | Container must run with `-e MEM0_API_KEY`.       |
+
+Whatever transport you choose, the server process itself must receive
+`MEM0_API_KEY` (and optional `MEM0_DEFAULT_USER_ID`). Passing `-e MEM0_API_KEY=…`
+to `docker run` or configuring env vars in Smithery is mandatory.

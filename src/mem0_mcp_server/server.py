@@ -9,10 +9,9 @@ from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
+from mem0 import MemoryClient
 from mem0.exceptions import MemoryError
 from pydantic import BaseModel, Field
-
-from mem0 import MemoryClient
 
 try:  # Support both package (`python -m mem0_mcp.server`) and script (`python mem0_mcp/server.py`) runs.
     from .schemas import (
@@ -68,6 +67,7 @@ else:
         return smithery_module.server(*args, **kwargs)
 
 
+# graph remains off by default , also set the default user_id to "mem0-mcp" when nothing set
 ENV_API_KEY = os.getenv("MEM0_API_KEY")
 ENV_DEFAULT_USER_ID = os.getenv("MEM0_DEFAULT_USER_ID", "mem0-mcp")
 ENV_ENABLE_GRAPH_DEFAULT = os.getenv("MEM0_ENABLE_GRAPH_DEFAULT", "false").lower() in {
@@ -87,7 +87,9 @@ def _config_value(source: Any, field: str):
     return getattr(source, field, None)
 
 
-def _with_default_filters(default_user_id: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _with_default_filters(
+    default_user_id: str, filters: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Ensure filters exist and include the default user_id at the top level."""
     if not filters:
         return {"AND": [{"user_id": default_user_id}]}
@@ -141,15 +143,14 @@ def _resolve_settings(
     )
     enable_graph_default = _config_value(session_config, "enable_graph_default")
     if enable_graph_default is None:
-        enable_graph_default = (
-            base_config.enable_graph_default if base_config else None
-        )
+        enable_graph_default = base_config.enable_graph_default if base_config else None
     if enable_graph_default is None:
         enable_graph_default = ENV_ENABLE_GRAPH_DEFAULT
 
     return api_key, default_user, enable_graph_default
 
 
+# init the client
 def _mem0_client(api_key: str) -> MemoryClient:
     client = _CLIENT_CACHE.get(api_key)
     if client is None:
