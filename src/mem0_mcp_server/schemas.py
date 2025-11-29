@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 
+# classic structure across all payloads , does not change
 class ToolMessage(BaseModel):
     role: str = Field(..., description="Role of the speaker, e.g., user or assistant.")
     content: str = Field(..., description="Full text of the utterance to store.")
@@ -32,6 +33,7 @@ class AddMemoryArgs(BaseModel):
     )
 
 
+# this is where we start with filters
 class SearchMemoriesArgs(BaseModel):
     query: str = Field(..., description="Describe what you want to find.")
     filters: Optional[Dict[str, Any]] = Field(
@@ -55,7 +57,9 @@ class GetMemoriesArgs(BaseModel):
 
 
 class DeleteAllArgs(BaseModel):
-    user_id: Optional[str] = Field(None, description="User scope to delete; defaults to server user.")
+    user_id: Optional[str] = Field(
+        None, description="User scope to delete; defaults to server user."
+    )
     agent_id: Optional[str] = Field(None, description="Optional agent scope filter.")
     app_id: Optional[str] = Field(None, description="Optional app scope filter.")
     run_id: Optional[str] = Field(None, description="Optional run scope filter.")
@@ -66,4 +70,3 @@ class DeleteEntitiesArgs(BaseModel):
     agent_id: Optional[str] = Field(None, description="Delete this agent and its memories.")
     app_id: Optional[str] = Field(None, description="Delete this app and its memories.")
     run_id: Optional[str] = Field(None, description="Delete this run and its memories.")
-
