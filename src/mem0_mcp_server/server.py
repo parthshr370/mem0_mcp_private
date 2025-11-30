@@ -180,12 +180,13 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
     # graph is disabled by default to make queries simpler and fast
     # Mention " Enable/Use graph while calling memory " in your system prompt to run it in each instance
 
-    @server.tool()
+    @server.tool(description="Store a user’s new preference, fact, or conversation snippet.")
     def add_memory(
         text: Optional[str] = None,
         messages: Optional[list[Dict[str, str]]] = None,
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
+        app_id: Optional[str] = None,
         run_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         enable_graph: Optional[bool] = None,
@@ -199,6 +200,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
             messages=[ToolMessage(**msg) for msg in messages] if messages else None,
             user_id=user_id or default_user,
             agent_id=agent_id,
+            app_id=app_id,
             run_id=run_id,
             metadata=metadata,
             enable_graph=_default_enable_graph(enable_graph, graph_default),
@@ -224,7 +226,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.add, conversation, **payload)
 
-    @server.tool()
+    @server.tool(description="Run a semantic search over existing memories.")
     def search_memories(
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -247,7 +249,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.search, **payload)
 
-    @server.tool()
+    @server.tool(description="Page through memories using filters instead of search.")
     def get_memories(
         filters: Optional[Dict[str, Any]] = None,
         page: Optional[int] = None,
@@ -270,7 +272,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.get_all, **payload)
 
-    @server.tool()
+    @server.tool(description="Delete every memory in the given user/agent/app/run but keep the entity.")
     def delete_all_memories(
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
@@ -291,7 +293,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.delete_all, **payload)
 
-    @server.tool()
+    @server.tool(description="List which users/agents/apps/runs currently hold memories.")
     def list_entities(ctx: Context | None = None) -> str:
         """List users/agents/apps/runs with stored memories."""
 
@@ -299,7 +301,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.users)
 
-    @server.tool()
+    @server.tool(description="Fetch a single memory once you know its memory_id.")
     def get_memory(memory_id: str, ctx: Context | None = None) -> str:
         """Retrieve a single memory once the user has picked an exact ID."""
 
@@ -307,7 +309,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.get, memory_id)
 
-    @server.tool()
+    @server.tool(description="Overwrite an existing memory’s text.")
     def update_memory(memory_id: str, text: str, ctx: Context | None = None) -> str:
         """Overwrite an existing memory’s text after the user confirms the exact memory_id."""
 
@@ -315,7 +317,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.update, memory_id=memory_id, text=text)
 
-    @server.tool()
+    @server.tool(description="Delete one memory after the user confirms its memory_id.")
     def delete_memory(memory_id: str, ctx: Context | None = None) -> str:
         """Delete a memory once the user explicitly confirms the memory_id to remove."""
 
@@ -323,7 +325,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.delete, memory_id)
 
-    @server.tool()
+    @server.tool(description="Remove a user/agent/app/run record entirely (and cascade-delete its memories).")
     def delete_entities(
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
