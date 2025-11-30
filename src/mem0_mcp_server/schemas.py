@@ -26,6 +26,7 @@ class AddMemoryArgs(BaseModel):
     )
     user_id: Optional[str] = Field(None, description="Override for the Mem0 user ID.")
     agent_id: Optional[str] = Field(None, description="Optional agent identifier.")
+    app_id: Optional[str] = Field(None, description="Optional app identifier.")
     run_id: Optional[str] = Field(None, description="Optional run identifier.")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Opaque metadata to persist.")
     enable_graph: Optional[bool] = Field(
