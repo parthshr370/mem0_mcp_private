@@ -16,6 +16,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.mcp import MCPServerStdio, load_mcp_servers
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
@@ -132,6 +133,7 @@ def _print_banner(model: str) -> None:
 async def chat_loop(agent: Agent, server: MCPServerStdio, model_name: str) -> None:
     """Interactive REPL that streams requests through the agent."""
 
+    message_history: list[ModelMessage] = []
     async with server:
         async with agent:
             _print_banner(model_name)
@@ -146,7 +148,8 @@ async def chat_loop(agent: Agent, server: MCPServerStdio, model_name: str) -> No
                 if user_input.lower() in {"exit", "quit"}:
                     print("Bye!")
                     return
-                result = await agent.run(user_input)
+                result = await agent.run(user_input, message_history=message_history)
+                message_history.extend(result.new_messages())
                 print(f"\nAgent> {result.output}\n")
 
 
