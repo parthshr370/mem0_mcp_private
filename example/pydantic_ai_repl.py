@@ -16,6 +16,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.mcp import MCPServerStdio, load_mcp_servers
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
@@ -104,9 +105,10 @@ def build_server() -> MCPServerStdio:
 def build_agent(server: MCPServerStdio) -> tuple[Agent, str]:
     """Create a Pydantic AI agent that can use the Mem0 MCP tools."""
 
+    default_user = os.getenv("MEM0_DEFAULT_USER_ID", "mem0-mcp")
     system_prompt = (
         "You are Mem0Guide, a friendly assistant whose ONLY external actions are the Mem0 MCP tools.\n"
-        "Default to MEM0_DEFAULT_USER_ID (env or session config) unless the user gives another value, and inject it into every filter.\n"
+        f"Default to user_id='{default_user}' unless the user gives another value, and inject it into every filter.\n"
         "Operating loop:\n"
         "  1) Treat every new preference/fact/personal detail as durable—call add_memory right away (even if they never say “remember”) unless they opt out. "
         "When a new detail replaces an older one, summarize both so the latest truth is clear (e.g., “was planning Berlin; now relocating to San Francisco”).\n"
@@ -131,6 +133,7 @@ def _print_banner(model: str) -> None:
 async def chat_loop(agent: Agent, server: MCPServerStdio, model_name: str) -> None:
     """Interactive REPL that streams requests through the agent."""
 
+    message_history: list[ModelMessage] = []
     async with server:
         async with agent:
             _print_banner(model_name)
@@ -145,7 +148,8 @@ async def chat_loop(agent: Agent, server: MCPServerStdio, model_name: str) -> No
                 if user_input.lower() in {"exit", "quit"}:
                     print("Bye!")
                     return
-                result = await agent.run(user_input)
+                result = await agent.run(user_input, message_history=message_history)
+                message_history.extend(result.new_messages())
                 print(f"\nAgent> {result.output}\n")
 
 

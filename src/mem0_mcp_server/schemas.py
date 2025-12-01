@@ -13,6 +13,18 @@ class ToolMessage(BaseModel):
     content: str = Field(..., description="Full text of the utterance to store.")
 
 
+class ConfigSchema(BaseModel):
+    """Session-level overrides used when hosting via Smithery or HTTP."""
+
+    mem0_api_key: Optional[str] = Field(None, description="Mem0 API key overriding env vars.")
+    default_user_id: Optional[str] = Field(
+        None, description="Default user_id injected into filters when unspecified."
+    )
+    enable_graph_default: Optional[bool] = Field(
+        None, description="Default enable_graph toggle when clients omit the flag."
+    )
+
+
 class AddMemoryArgs(BaseModel):
     text: Optional[str] = Field(
         None, description="Simple sentence to remember; converted into a user message when set."

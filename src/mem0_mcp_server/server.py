@@ -11,11 +11,11 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
 from mem0 import MemoryClient
 from mem0.exceptions import MemoryError
-from pydantic import BaseModel, Field
 
 try:  # Support both package (`python -m mem0_mcp.server`) and script (`python mem0_mcp/server.py`) runs.
     from .schemas import (
         AddMemoryArgs,
+        ConfigSchema,
         DeleteAllArgs,
         DeleteEntitiesArgs,
         GetMemoriesArgs,
@@ -25,6 +25,7 @@ try:  # Support both package (`python -m mem0_mcp.server`) and script (`python m
 except ImportError:  # pragma: no cover - fallback for script execution
     from schemas import (
         AddMemoryArgs,
+        ConfigSchema,
         DeleteAllArgs,
         DeleteEntitiesArgs,
         GetMemoriesArgs,
@@ -38,16 +39,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s | %(messa
 logger = logging.getLogger("mem0_mcp_server")
 
 
-class ConfigSchema(BaseModel):
-    """Session-level overrides for hosted deployments."""
-
-    mem0_api_key: Optional[str] = Field(None, description="Mem0 API key overriding env vars.")
-    default_user_id: Optional[str] = Field(
-        None, description="Default user_id injected into filters when unspecified."
-    )
-    enable_graph_default: Optional[bool] = Field(
-        None, description="Default enable_graph toggle when clients omit the flag."
-    )
 
 
 try:
@@ -272,7 +263,9 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.get_all, **payload)
 
-    @server.tool(description="Delete every memory in the given user/agent/app/run but keep the entity.")
+    @server.tool(
+        description="Delete every memory in the given user/agent/app/run but keep the entity."
+    )
     def delete_all_memories(
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
@@ -325,7 +318,9 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.delete, memory_id)
 
-    @server.tool(description="Remove a user/agent/app/run record entirely (and cascade-delete its memories).")
+    @server.tool(
+        description="Remove a user/agent/app/run record entirely (and cascade-delete its memories)."
+    )
     def delete_entities(
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
