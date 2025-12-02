@@ -160,10 +160,12 @@ def _default_enable_graph(enable_graph: Optional[bool], default: bool) -> bool:
 def create_server(config: ConfigSchema | None = None) -> FastMCP:
     """Create a FastMCP server usable via stdio, Docker, or Smithery."""
 
-    # Ensure env-only runs fail fast when no API key is available anywhere.
+    # When running inside Smithery, the platform probes the server without user-provided
+    # session config, so we defer the hard requirement for MEM0_API_KEY until a tool call.
     if not (ENV_API_KEY or (config and config.mem0_api_key)):
-        raise RuntimeError(
-            "MEM0_API_KEY is required via environment variables or Smithery session config."
+        logger.warning(
+            "MEM0_API_KEY is not set; Smithery health checks will pass, but every tool "
+            "invocation will fail until a key is supplied via session config or env vars."
         )
 
     server = FastMCP("mem0")
