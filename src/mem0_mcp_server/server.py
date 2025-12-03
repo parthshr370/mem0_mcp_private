@@ -179,7 +179,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
     # graph is disabled by default to make queries simpler and fast
     # Mention " Enable/Use graph while calling memory " in your system prompt to run it in each instance
 
-    @server.tool(description="Store a user’s new preference, fact, or conversation snippet.")
+    @server.tool(description="Store a new preference, fact, or conversation snippet. Requires at least one: user_id, agent_id, or run_id.")
     def add_memory(
         text: Optional[str] = None,
         messages: Optional[list[Dict[str, str]]] = None,
@@ -197,7 +197,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         args = AddMemoryArgs(
             text=text,
             messages=[ToolMessage(**msg) for msg in messages] if messages else None,
-            user_id=user_id or default_user,
+            user_id=user_id if user_id else (default_user if not (agent_id or run_id) else None),
             agent_id=agent_id,
             app_id=app_id,
             run_id=run_id,
