@@ -225,7 +225,21 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.add, conversation, **payload)
 
-    @server.tool(description="Run a semantic search over existing memories.")
+    @server.tool(
+        description="""Run a semantic search over existing memories.
+
+        Use filters to narrow results. Common filter patterns:
+        - Single user: {"AND": [{"user_id": "john"}]}
+        - User with keyword: {"AND": [{"user_id": "john"}, {"keywords": {"icontains": "pizza"}}]}
+        - User with category: {"AND": [{"user_id": "john"}, {"categories": {"in": ["finance"]}}]}
+        - Date range: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}, "lt": "2024-02-01"}}]}
+        - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
+        - Exclude categories: {"AND": [{"user_id": "john"}, {"NOT": {"categories": {"in": ["spam"]}}}]}
+        - Wildcard for all agents: {"AND": [{"user_id": "john"}, {"agent_id": "*"}]}
+
+        user_id is automatically added to filters if not provided.
+        """
+    )
     def search_memories(
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -248,7 +262,20 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.search, **payload)
 
-    @server.tool(description="Page through memories using filters instead of search.")
+    @server.tool(
+        description="""Page through memories using filters instead of search.
+
+        Use filters to list specific memories. Common filter patterns:
+        - Single user: {"AND": [{"user_id": "john"}]}
+        - User with metadata: {"AND": [{"user_id": "john"}, {"metadata": {"source": "email"}}]}
+        - All users with category: {"AND": [{"user_id": "*"}, {"categories": {"in": ["finance"]}}]}
+        - Recent memories: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+        - Specific memory IDs: {"AND": [{"user_id": "john"}, {"memory_ids": ["mem1", "mem2"]}]}
+
+        Pagination: Use page (1-indexed) and page_size for browsing results.
+        user_id is automatically added to filters if not provided.
+        """
+    )
     def get_memories(
         filters: Optional[Dict[str, Any]] = None,
         page: Optional[int] = None,
@@ -356,6 +383,28 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         payload = args.model_dump(exclude_none=True)
         client = _mem0_client(api_key)
         return _mem0_call(client.delete_users, **payload)
+
+    # Add a simple prompt for server capabilities
+    @server.prompt()
+    def memory_assistant() -> str:
+        """Get help with memory operations and best practices."""
+        return """You are using the Mem0 MCP server for long-term memory management.
+
+Quick Start:
+1. Store memories: Use add_memory to save facts, preferences, or conversations
+2. Search memories: Use search_memories for semantic queries
+3. List memories: Use get_memories for filtered browsing
+4. Update/Delete: Use update_memory and delete_memory for modifications
+
+Filter Examples:
+- User memories: {"AND": [{"user_id": "john"}]}
+- With keyword: {"AND": [{"user_id": "john"}, {"keywords": {"icontains": "pizza"}}]}
+- Recent only: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+
+Tips:
+- user_id is automatically added to filters
+- Use "*" as wildcard for any non-null value
+- Combine filters with AND/OR/NOT for complex queries"""
 
     return server
 
