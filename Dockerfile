@@ -14,4 +14,4 @@ RUN uv pip install --system .[smithery]
 
 ENV PORT=8081
 
-CMD ["python", "-m", "smithery.cli.dev"]
+CMD ["python", "-m", "mem0_mcp_server.http_entry"]

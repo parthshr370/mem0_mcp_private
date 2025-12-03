@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mem0 import MemoryClient
 from mem0.exceptions import MemoryError
 
@@ -168,7 +169,12 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
             "invocation will fail until a key is supplied via session config or env vars."
         )
 
-    server = FastMCP("mem0")
+    server = FastMCP(
+        "mem0",
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8081")),
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
 
     # graph is disabled by default to make queries simpler and fast
     # Mention " Enable/Use graph while calling memory " in your system prompt to run it in each instance
