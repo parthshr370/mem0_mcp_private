@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
+from urllib.parse import parse_qs
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mem0 import MemoryClient
 from mem0.exceptions import MemoryError
+from pydantic import Field
 
 try:  # Support both package (`python -m mem0_mcp.server`) and script (`python mem0_mcp/server.py`) runs.
     from .schemas import (
@@ -71,6 +73,33 @@ ENV_ENABLE_GRAPH_DEFAULT = os.getenv("MEM0_ENABLE_GRAPH_DEFAULT", "false").lower
 _CLIENT_CACHE: Dict[str, MemoryClient] = {}
 
 
+def _parse_smithery_config(query_string: Optional[str]) -> Dict[str, Any]:
+    """Parse Smithery config from HTTP query parameters."""
+    if not query_string:
+        return {}
+
+    params = parse_qs(query_string)
+    config = {}
+
+    # Parse config parameters (they come as config.key=value)
+    for key, values in params.items():
+        if key.startswith('config.'):
+            config_key = key[7:]  # Remove 'config.' prefix
+            if len(values) == 1:
+                # Handle simple values
+                value = values[0]
+                # Convert boolean strings
+                if value.lower() in ['true', 'false']:
+                    config[config_key] = value.lower() == 'true'
+                else:
+                    config[config_key] = value
+            else:
+                # Handle array values
+                config[config_key] = values
+
+    return config
+
+
 def _config_value(source: Any, field: str):
     if source is None:
         return None
@@ -117,6 +146,16 @@ def _resolve_settings(
     ctx: Context | None,
     base_config: ConfigSchema | None,
 ) -> tuple[str, str, bool]:
+    # First check Smithery config (for HTTP deployment)
+    if ctx and hasattr(ctx, "request") and ctx.request:
+        smithery_config = _parse_smithery_config(ctx.request.query_string)
+        if "mem0_api_key" in smithery_config:
+            api_key = smithery_config["mem0_api_key"]
+            default_user = smithery_config.get("default_user_id", ENV_DEFAULT_USER_ID)
+            enable_graph = smithery_config.get("enable_graph_default", ENV_ENABLE_GRAPH_DEFAULT)
+            return api_key, default_user, enable_graph
+
+    # Fallback to session config or environment
     session_config = getattr(ctx, "session_config", None)
     api_key = (
         _config_value(session_config, "mem0_api_key")
@@ -125,7 +164,7 @@ def _resolve_settings(
     )
     if not api_key:
         raise RuntimeError(
-            "MEM0_API_KEY is required (via session config or environment) to run the Mem0 MCP server."
+            "MEM0_API_KEY is required (via Smithery config, session config, or environment) to run the Mem0 MCP server."
         )
 
     default_user = (
@@ -179,16 +218,46 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
     # graph is disabled by default to make queries simpler and fast
     # Mention " Enable/Use graph while calling memory " in your system prompt to run it in each instance
 
-    @server.tool(description="Store a user’s new preference, fact, or conversation snippet.")
+    @server.tool(description="Store a new preference, fact, or conversation snippet. Requires at least one: user_id, agent_id, or run_id.")
     def add_memory(
-        text: Optional[str] = None,
-        messages: Optional[list[Dict[str, str]]] = None,
-        user_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        app_id: Optional[str] = None,
-        run_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        enable_graph: Optional[bool] = None,
+        text: Annotated[
+            str,
+            Field(
+                description="Plain sentence summarizing what to store. Required even if `messages` is provided."
+            ),
+        ],
+        messages: Annotated[
+            Optional[list[Dict[str, str]]],
+            Field(
+                default=None,
+                description="Structured conversation history with `role`/`content`. "
+                "Use when you have multiple turns.",
+            ),
+        ] = None,
+        user_id: Annotated[
+            Optional[str],
+            Field(default=None, description="Override the default user scope for this write."),
+        ] = None,
+        agent_id: Annotated[
+            Optional[str], Field(default=None, description="Optional agent identifier.")
+        ] = None,
+        app_id: Annotated[
+            Optional[str], Field(default=None, description="Optional app identifier.")
+        ] = None,
+        run_id: Annotated[
+            Optional[str], Field(default=None, description="Optional run identifier.")
+        ] = None,
+        metadata: Annotated[
+            Optional[Dict[str, Any]],
+            Field(default=None, description="Attach arbitrary metadata JSON to the memory."),
+        ] = None,
+        enable_graph: Annotated[
+            Optional[bool],
+            Field(
+                default=None,
+                description="Set true only if the caller explicitly wants Mem0 graph memory.",
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> str:
         """Write durable information to Mem0."""
@@ -197,7 +266,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         args = AddMemoryArgs(
             text=text,
             messages=[ToolMessage(**msg) for msg in messages] if messages else None,
-            user_id=user_id or default_user,
+            user_id=user_id if user_id else (default_user if not (agent_id or run_id) else None),
             agent_id=agent_id,
             app_id=app_id,
             run_id=run_id,
@@ -225,12 +294,35 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.add, conversation, **payload)
 
-    @server.tool(description="Run a semantic search over existing memories.")
+    @server.tool(
+        description="""Run a semantic search over existing memories.
+
+        Use filters to narrow results. Common filter patterns:
+        - Single user: {"AND": [{"user_id": "john"}]}
+        - Agent memories: {"AND": [{"agent_id": "agent_name"}]}
+        - Recent memories: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+        - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
+        - Cross-entity: {"OR": [{"user_id": "john"}, {"agent_id": "agent_name"}]}
+
+        user_id is automatically added to filters if not provided.
+        """
+    )
     def search_memories(
-        query: str,
-        filters: Optional[Dict[str, Any]] = None,
-        limit: Optional[int] = None,
-        enable_graph: Optional[bool] = None,
+        query: Annotated[str, Field(description="Natural language description of what to find.")],
+        filters: Annotated[
+            Optional[Dict[str, Any]],
+            Field(default=None, description="Additional filter clauses (user_id injected automatically)."),
+        ] = None,
+        limit: Annotated[
+            Optional[int], Field(default=None, description="Maximum number of results to return.")
+        ] = None,
+        enable_graph: Annotated[
+            Optional[bool],
+            Field(
+                default=None,
+                description="Set true only when the user explicitly wants graph-derived memories.",
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> str:
         """Semantic search against existing memories."""
@@ -248,12 +340,37 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         client = _mem0_client(api_key)
         return _mem0_call(client.search, **payload)
 
-    @server.tool(description="Page through memories using filters instead of search.")
+    @server.tool(
+        description="""Page through memories using filters instead of search.
+
+        Use filters to list specific memories. Common filter patterns:
+        - Single user: {"AND": [{"user_id": "john"}]}
+        - Agent memories: {"AND": [{"agent_id": "agent_name"}]}
+        - Recent memories: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+        - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
+
+        Pagination: Use page (1-indexed) and page_size for browsing results.
+        user_id is automatically added to filters if not provided.
+        """
+    )
     def get_memories(
-        filters: Optional[Dict[str, Any]] = None,
-        page: Optional[int] = None,
-        page_size: Optional[int] = None,
-        enable_graph: Optional[bool] = None,
+        filters: Annotated[
+            Optional[Dict[str, Any]],
+            Field(default=None, description="Structured filters; user_id injected automatically."),
+        ] = None,
+        page: Annotated[
+            Optional[int], Field(default=None, description="1-indexed page number when paginating.")
+        ] = None,
+        page_size: Annotated[
+            Optional[int], Field(default=None, description="Number of memories per page (default 10).")
+        ] = None,
+        enable_graph: Annotated[
+            Optional[bool],
+            Field(
+                default=None,
+                description="Set true only if the caller explicitly wants graph-derived memories.",
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> str:
         """List memories via structured filters or pagination."""
@@ -275,10 +392,18 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         description="Delete every memory in the given user/agent/app/run but keep the entity."
     )
     def delete_all_memories(
-        user_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        app_id: Optional[str] = None,
-        run_id: Optional[str] = None,
+        user_id: Annotated[
+            Optional[str], Field(default=None, description="User scope to delete; defaults to server user.")
+        ] = None,
+        agent_id: Annotated[
+            Optional[str], Field(default=None, description="Optional agent scope to delete.")
+        ] = None,
+        app_id: Annotated[
+            Optional[str], Field(default=None, description="Optional app scope to delete.")
+        ] = None,
+        run_id: Annotated[
+            Optional[str], Field(default=None, description="Optional run scope to delete.")
+        ] = None,
         ctx: Context | None = None,
     ) -> str:
         """Bulk-delete every memory in the confirmed scope."""
@@ -303,7 +428,10 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         return _mem0_call(client.users)
 
     @server.tool(description="Fetch a single memory once you know its memory_id.")
-    def get_memory(memory_id: str, ctx: Context | None = None) -> str:
+    def get_memory(
+        memory_id: Annotated[str, Field(description="Exact memory_id to fetch.")],
+        ctx: Context | None = None,
+    ) -> str:
         """Retrieve a single memory once the user has picked an exact ID."""
 
         api_key, _, _ = _resolve_settings(ctx, config)
@@ -311,7 +439,11 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         return _mem0_call(client.get, memory_id)
 
     @server.tool(description="Overwrite an existing memory’s text.")
-    def update_memory(memory_id: str, text: str, ctx: Context | None = None) -> str:
+    def update_memory(
+        memory_id: Annotated[str, Field(description="Exact memory_id to overwrite.")],
+        text: Annotated[str, Field(description="Replacement text for the memory.")],
+        ctx: Context | None = None,
+    ) -> str:
         """Overwrite an existing memory’s text after the user confirms the exact memory_id."""
 
         api_key, _, _ = _resolve_settings(ctx, config)
@@ -319,7 +451,10 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         return _mem0_call(client.update, memory_id=memory_id, text=text)
 
     @server.tool(description="Delete one memory after the user confirms its memory_id.")
-    def delete_memory(memory_id: str, ctx: Context | None = None) -> str:
+    def delete_memory(
+        memory_id: Annotated[str, Field(description="Exact memory_id to delete.")],
+        ctx: Context | None = None,
+    ) -> str:
         """Delete a memory once the user explicitly confirms the memory_id to remove."""
 
         api_key, _, _ = _resolve_settings(ctx, config)
@@ -330,10 +465,18 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         description="Remove a user/agent/app/run record entirely (and cascade-delete its memories)."
     )
     def delete_entities(
-        user_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        app_id: Optional[str] = None,
-        run_id: Optional[str] = None,
+        user_id: Annotated[
+            Optional[str], Field(default=None, description="Delete this user and its memories.")
+        ] = None,
+        agent_id: Annotated[
+            Optional[str], Field(default=None, description="Delete this agent and its memories.")
+        ] = None,
+        app_id: Annotated[
+            Optional[str], Field(default=None, description="Delete this app and its memories.")
+        ] = None,
+        run_id: Annotated[
+            Optional[str], Field(default=None, description="Delete this run and its memories.")
+        ] = None,
         ctx: Context | None = None,
     ) -> str:
         """Delete a user/agent/app/run (and its memories) once the user confirms the scope."""
@@ -356,6 +499,28 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         payload = args.model_dump(exclude_none=True)
         client = _mem0_client(api_key)
         return _mem0_call(client.delete_users, **payload)
+
+    # Add a simple prompt for server capabilities
+    @server.prompt()
+    def memory_assistant() -> str:
+        """Get help with memory operations and best practices."""
+        return """You are using the Mem0 MCP server for long-term memory management.
+
+Quick Start:
+1. Store memories: Use add_memory to save facts, preferences, or conversations
+2. Search memories: Use search_memories for semantic queries
+3. List memories: Use get_memories for filtered browsing
+4. Update/Delete: Use update_memory and delete_memory for modifications
+
+Filter Examples:
+- User memories: {"AND": [{"user_id": "john"}]}
+- Agent memories: {"AND": [{"agent_id": "agent_name"}]}
+- Recent only: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+
+Tips:
+- user_id is automatically added to filters
+- Use "*" as wildcard for any non-null value
+- Combine filters with AND/OR/NOT for complex queries"""
 
     return server
 
