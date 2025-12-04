@@ -299,12 +299,10 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
 
         Use filters to narrow results. Common filter patterns:
         - Single user: {"AND": [{"user_id": "john"}]}
-        - User with keyword: {"AND": [{"user_id": "john"}, {"keywords": {"icontains": "pizza"}}]}
-        - User with category: {"AND": [{"user_id": "john"}, {"categories": {"in": ["finance"]}}]}
-        - Date range: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}, "lt": "2024-02-01"}}]}
-        - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
-        - Exclude categories: {"AND": [{"user_id": "john"}, {"NOT": {"categories": {"in": ["spam"]}}}]}
         - Agent memories: {"AND": [{"agent_id": "agent_name"}]}
+        - Recent memories: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+        - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
+        - Cross-entity: {"OR": [{"user_id": "john"}, {"agent_id": "agent_name"}]}
 
         user_id is automatically added to filters if not provided.
         """
@@ -347,10 +345,9 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
 
         Use filters to list specific memories. Common filter patterns:
         - Single user: {"AND": [{"user_id": "john"}]}
-        - User with metadata: {"AND": [{"user_id": "john"}, {"metadata": {"source": "email"}}]}
-        - Category only: {"categories": {"in": ["finance"]}}
+        - Agent memories: {"AND": [{"agent_id": "agent_name"}]}
         - Recent memories: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
-        - Specific memory IDs: {"AND": [{"user_id": "john"}, {"memory_ids": ["mem1", "mem2"]}]}
+        - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
 
         Pagination: Use page (1-indexed) and page_size for browsing results.
         user_id is automatically added to filters if not provided.
@@ -517,7 +514,7 @@ Quick Start:
 
 Filter Examples:
 - User memories: {"AND": [{"user_id": "john"}]}
-- With keyword: {"AND": [{"user_id": "john"}, {"keywords": {"icontains": "pizza"}}]}
+- Agent memories: {"AND": [{"agent_id": "agent_name"}]}
 - Recent only: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
 
 Tips:
