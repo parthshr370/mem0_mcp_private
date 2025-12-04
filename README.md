@@ -22,6 +22,32 @@ The server exposes the following tools to your LLM:
 
 All responses are JSON strings returned directly from the Mem0 API.
 
+## Filter Guidelines
+
+Mem0 filters use JSON with logical operators. Key rules:
+
+- **Don't mix entities in AND**: `{"AND": [{"user_id": "john"}, {"agent_id": "bot"}]}` is invalid
+- **Use OR for different entities**: `{"OR": [{"user_id": "john"}, {"agent_id": "bot"}]}` works
+- **Default user_id**: Added automatically if not specified
+
+### Quick Examples
+```json
+// Single user
+{"AND": [{"user_id": "john"}]}
+
+// Agent memories only
+{"AND": [{"agent_id": "schedule_bot"}]}
+
+// Multiple users
+{"AND": [{"user_id": {"in": ["john", "jane"]}}]}
+
+// Cross-entity search
+{"OR": [{"user_id": "john"}, {"agent_id": "bot"}]}
+
+// Recent memories
+{"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
+```
+
 ## Ways to Run
 
 You can run this server in three modes depending on your setup:

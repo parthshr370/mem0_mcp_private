@@ -304,7 +304,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         - Date range: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}, "lt": "2024-02-01"}}]}
         - Multiple users: {"AND": [{"user_id": {"in": ["john", "jane"]}}]}
         - Exclude categories: {"AND": [{"user_id": "john"}, {"NOT": {"categories": {"in": ["spam"]}}}]}
-        - Wildcard for all agents: {"AND": [{"user_id": "john"}, {"agent_id": "*"}]}
+        - Agent memories: {"AND": [{"agent_id": "agent_name"}]}
 
         user_id is automatically added to filters if not provided.
         """
@@ -348,7 +348,7 @@ def create_server(config: ConfigSchema | None = None) -> FastMCP:
         Use filters to list specific memories. Common filter patterns:
         - Single user: {"AND": [{"user_id": "john"}]}
         - User with metadata: {"AND": [{"user_id": "john"}, {"metadata": {"source": "email"}}]}
-        - All users with category: {"AND": [{"user_id": "*"}, {"categories": {"in": ["finance"]}}]}
+        - Category only: {"categories": {"in": ["finance"]}}
         - Recent memories: {"AND": [{"user_id": "john"}, {"created_at": {"gte": "2024-01-01"}}]}
         - Specific memory IDs: {"AND": [{"user_id": "john"}, {"memory_ids": ["mem1", "mem2"]}]}
 
