@@ -27,7 +27,7 @@ All responses are JSON strings returned directly from the Mem0 API.
 There are three ways to use the Mem0 MCP Server:
 
 1. **Python Package** - Install and run locally using `uvx` with any MCP client
-2. **Docker** - Containerized deployment that creates an `/mcp` HTTP endpoint
+2. **Docker** - Containerized deployment that exposes the Streamable HTTP endpoint under `/mcp`
 3. **Smithery** - Remote hosted service for managed deployments
 
 ## Quick Start
@@ -145,6 +145,8 @@ To run with Docker:
      -p 8080:8081 \
      mem0-mcp-server
    ```
+
+   The Streamable HTTP endpoint is served at `http://localhost:8080/mcp` (matching FastMCP defaults), so configure clients accordingly. Smithery-hosted deployments expose the same path.
 
 3. Monitor the container:
 

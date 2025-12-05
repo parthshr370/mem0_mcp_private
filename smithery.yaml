@@ -1,4 +1,4 @@
-runtime: "container"
+runtime: "python"
 
 startCommand:
   type: "http"
@@ -21,7 +21,3 @@ startCommand:
     mem0_api_key: "your-mem0-api-key-here"
     default_user_id: "pepsico-logistics-agent"
     enable_graph_default: false
-
-build:
-  dockerfile: "Dockerfile"
-  dockerBuildPath: "."
