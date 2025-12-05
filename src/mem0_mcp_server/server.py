@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from typing import Annotated, Any, Dict, Optional
+from urllib.parse import parse_qs
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
@@ -44,18 +45,20 @@ logger = logging.getLogger("mem0_mcp_server")
 
 
 try:
-    from smithery.decorators import smithery
+    from smithery.decorators import smithery as smithery_module
 except ImportError:  # pragma: no cover - Smithery optional
 
-    class _SmitheryFallback:
-        @staticmethod
-        def server(*args, **kwargs):  # type: ignore[misc]
-            def decorator(func):
-                return func
+    def smithery_server(*args, **kwargs):  # type: ignore[override]
+        def decorator(func):
+            return func
 
-            return decorator
+        return decorator
 
-    smithery = _SmitheryFallback()  # type: ignore[assignment]
+
+else:
+
+    def smithery_server(*args, **kwargs):  # pragma: no cover - exercised in Smithery env
+        return smithery_module.server(*args, **kwargs)
 
 
 # graph remains off by default , also set the default user_id to "mem0-mcp" when nothing set
@@ -68,6 +71,33 @@ ENV_ENABLE_GRAPH_DEFAULT = os.getenv("MEM0_ENABLE_GRAPH_DEFAULT", "false").lower
 }
 
 _CLIENT_CACHE: Dict[str, MemoryClient] = {}
+
+
+def _parse_smithery_config(query_string: Optional[str]) -> Dict[str, Any]:
+    """Parse Smithery config from HTTP query parameters."""
+    if not query_string:
+        return {}
+
+    params = parse_qs(query_string)
+    config = {}
+
+    # Parse config parameters (they come as config.key=value)
+    for key, values in params.items():
+        if key.startswith('config.'):
+            config_key = key[7:]  # Remove 'config.' prefix
+            if len(values) == 1:
+                # Handle simple values
+                value = values[0]
+                # Convert boolean strings
+                if value.lower() in ['true', 'false']:
+                    config[config_key] = value.lower() == 'true'
+                else:
+                    config[config_key] = value
+            else:
+                # Handle array values
+                config[config_key] = values
+
+    return config
 
 
 def _config_value(source: Any, field: str):
@@ -112,11 +142,24 @@ def _mem0_call(func, *args, **kwargs):
     return json.dumps(result, ensure_ascii=False)
 
 
-def _resolve_settings(ctx: Context | None) -> tuple[str, str, bool]:
-    # Smithery middleware injects validated config into ctx.session_config.
+def _resolve_settings(
+    ctx: Context | None,
+    base_config: ConfigSchema | None,
+) -> tuple[str, str, bool]:
+    # First check Smithery config (for HTTP deployment)
+    if ctx and hasattr(ctx, "request") and ctx.request:
+        smithery_config = _parse_smithery_config(ctx.request.query_string)
+        if "mem0_api_key" in smithery_config:
+            api_key = smithery_config["mem0_api_key"]
+            default_user = smithery_config.get("default_user_id", ENV_DEFAULT_USER_ID)
+            enable_graph = smithery_config.get("enable_graph_default", ENV_ENABLE_GRAPH_DEFAULT)
+            return api_key, default_user, enable_graph
+
+    # Fallback to session config or environment
     session_config = getattr(ctx, "session_config", None)
     api_key = (
         _config_value(session_config, "mem0_api_key")
+        or (base_config.mem0_api_key if base_config else None)
         or ENV_API_KEY
     )
     if not api_key:
@@ -126,9 +169,12 @@ def _resolve_settings(ctx: Context | None) -> tuple[str, str, bool]:
 
     default_user = (
         _config_value(session_config, "default_user_id")
+        or (base_config.default_user_id if base_config else None)
         or ENV_DEFAULT_USER_ID
     )
     enable_graph_default = _config_value(session_config, "enable_graph_default")
+    if enable_graph_default is None:
+        enable_graph_default = base_config.enable_graph_default if base_config else None
     if enable_graph_default is None:
         enable_graph_default = ENV_ENABLE_GRAPH_DEFAULT
 
@@ -150,13 +196,13 @@ def _default_enable_graph(enable_graph: Optional[bool], default: bool) -> bool:
     return enable_graph
 
 
-@smithery.server(config_schema=ConfigSchema)
-def create_server() -> FastMCP:
+@smithery_server(config_schema=ConfigSchema)
+def create_server(config: ConfigSchema | None = None) -> FastMCP:
     """Create a FastMCP server usable via stdio, Docker, or Smithery."""
 
     # When running inside Smithery, the platform probes the server without user-provided
     # session config, so we defer the hard requirement for MEM0_API_KEY until a tool call.
-    if not ENV_API_KEY:
+    if not (ENV_API_KEY or (config and config.mem0_api_key)):
         logger.warning(
             "MEM0_API_KEY is not set; Smithery health checks will pass, but every tool "
             "invocation will fail until a key is supplied via session config or env vars."
@@ -216,7 +262,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Write durable information to Mem0."""
 
-        api_key, default_user, graph_default = _resolve_settings(ctx)
+        api_key, default_user, graph_default = _resolve_settings(ctx, config)
         args = AddMemoryArgs(
             text=text,
             messages=[ToolMessage(**msg) for msg in messages] if messages else None,
@@ -281,7 +327,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Semantic search against existing memories."""
 
-        api_key, default_user, graph_default = _resolve_settings(ctx)
+        api_key, default_user, graph_default = _resolve_settings(ctx, config)
         args = SearchMemoriesArgs(
             query=query,
             filters=filters,
@@ -329,7 +375,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """List memories via structured filters or pagination."""
 
-        api_key, default_user, graph_default = _resolve_settings(ctx)
+        api_key, default_user, graph_default = _resolve_settings(ctx, config)
         args = GetMemoriesArgs(
             filters=filters,
             page=page,
@@ -362,7 +408,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Bulk-delete every memory in the confirmed scope."""
 
-        api_key, default_user, _ = _resolve_settings(ctx)
+        api_key, default_user, _ = _resolve_settings(ctx, config)
         args = DeleteAllArgs(
             user_id=user_id or default_user,
             agent_id=agent_id,
@@ -377,7 +423,7 @@ def create_server() -> FastMCP:
     def list_entities(ctx: Context | None = None) -> str:
         """List users/agents/apps/runs with stored memories."""
 
-        api_key, _, _ = _resolve_settings(ctx)
+        api_key, _, _ = _resolve_settings(ctx, config)
         client = _mem0_client(api_key)
         return _mem0_call(client.users)
 
@@ -388,7 +434,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Retrieve a single memory once the user has picked an exact ID."""
 
-        api_key, _, _ = _resolve_settings(ctx)
+        api_key, _, _ = _resolve_settings(ctx, config)
         client = _mem0_client(api_key)
         return _mem0_call(client.get, memory_id)
 
@@ -400,7 +446,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Overwrite an existing memory’s text after the user confirms the exact memory_id."""
 
-        api_key, _, _ = _resolve_settings(ctx)
+        api_key, _, _ = _resolve_settings(ctx, config)
         client = _mem0_client(api_key)
         return _mem0_call(client.update, memory_id=memory_id, text=text)
 
@@ -411,7 +457,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Delete a memory once the user explicitly confirms the memory_id to remove."""
 
-        api_key, _, _ = _resolve_settings(ctx)
+        api_key, _, _ = _resolve_settings(ctx, config)
         client = _mem0_client(api_key)
         return _mem0_call(client.delete, memory_id)
 
@@ -435,7 +481,7 @@ def create_server() -> FastMCP:
     ) -> str:
         """Delete a user/agent/app/run (and its memories) once the user confirms the scope."""
 
-        api_key, _, _ = _resolve_settings(ctx)
+        api_key, _, _ = _resolve_settings(ctx, config)
         args = DeleteEntitiesArgs(
             user_id=user_id,
             agent_id=agent_id,
