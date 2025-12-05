@@ -46,12 +46,13 @@ logger = logging.getLogger("mem0_mcp_server")
 try:
     from smithery.decorators import smithery
 except ImportError:  # pragma: no cover - Smithery optional
-    # Fallback decorator when smithery is not available
+
     class _SmitheryFallback:
         @staticmethod
         def server(*args, **kwargs):  # type: ignore[misc]
             def decorator(func):
                 return func
+
             return decorator
 
     smithery = _SmitheryFallback()  # type: ignore[assignment]
@@ -67,8 +68,6 @@ ENV_ENABLE_GRAPH_DEFAULT = os.getenv("MEM0_ENABLE_GRAPH_DEFAULT", "false").lower
 }
 
 _CLIENT_CACHE: Dict[str, MemoryClient] = {}
-
-
 
 
 def _config_value(source: Any, field: str):
@@ -113,11 +112,8 @@ def _mem0_call(func, *args, **kwargs):
     return json.dumps(result, ensure_ascii=False)
 
 
-def _resolve_settings(
-    ctx: Context | None,
-) -> tuple[str, str, bool]:
-    # Smithery decorator validates config and makes it available via ctx.session_config
-    # Priority: session_config (from Smithery) > environment
+def _resolve_settings(ctx: Context | None) -> tuple[str, str, bool]:
+    # Smithery middleware injects validated config into ctx.session_config.
     session_config = getattr(ctx, "session_config", None)
     api_key = (
         _config_value(session_config, "mem0_api_key")
@@ -132,10 +128,9 @@ def _resolve_settings(
         _config_value(session_config, "default_user_id")
         or ENV_DEFAULT_USER_ID
     )
-    enable_graph_default = (
-        _config_value(session_config, "enable_graph_default")
-        or ENV_ENABLE_GRAPH_DEFAULT
-    )
+    enable_graph_default = _config_value(session_config, "enable_graph_default")
+    if enable_graph_default is None:
+        enable_graph_default = ENV_ENABLE_GRAPH_DEFAULT
 
     return api_key, default_user, enable_graph_default
 

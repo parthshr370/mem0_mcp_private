@@ -1,9 +1,1 @@
-runtime: "python"
-
-entrypoint: ["python", "-m", "mem0_mcp_server.server"]
-
-env:
-  MEM0_DEFAULT_USER_ID:
-    default: "mem0-mcp"
-  MEM0_ENABLE_GRAPH_DEFAULT:
-    default: false
+runtime: python
